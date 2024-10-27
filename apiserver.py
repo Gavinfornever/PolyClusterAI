@@ -45,6 +45,7 @@ def deploy(deploy_params: Deploy_Params):
     response = requests.post(center_controller_address+"/model/deploy", data=deploy_params.model_dump_json())
     return response.json()
 
+
 # 通过代码启动 FastAPI 服务器
 if __name__ == "__main__":
     uvicorn.run("apiserver:app", host="127.0.0.1", port=7999, reload=True)
