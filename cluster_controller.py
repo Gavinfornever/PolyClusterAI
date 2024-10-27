@@ -27,4 +27,4 @@ def create_item(item: Item):
 
 # 通过代码启动 FastAPI 服务器
 if __name__ == "__main__":
-    uvicorn.run("cluster_controller:app", host="127.0.0.1", port=7909, reload=True)
+    uvicorn.run("cluster_controller:app", host="127.0.0.1", port=7911, reload=True)
