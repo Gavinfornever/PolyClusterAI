@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 import json
+import requests
 
 app = FastAPI()
 
@@ -27,16 +28,6 @@ def dashboard():
     return res
     # return response.text
 
-# 动态路由的 GET 请求
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q}
-
-# POST 请求示例
-@app.post("/items/")
-def create_item(item: Item):
-    return {"item_name": item.name, "item_price": item.price}
-
 class Deploy_Params(BaseModel):
     model_config_id: str
     cluster_id: str
@@ -49,18 +40,19 @@ class Deploy_Params(BaseModel):
     backend: str = "vllm"
 
 mock_model_config = {
-    "_id":'model_xxx',
-    "model_name":"llama3.1",
+    "_id":'qwen25_0.5b_XS3AZ1',
+    "model_name":"qwen25_0.5b",
     "model_init_config":{},
     "deploy_config":{},
     "creator_id":"creator_www",
-    "deployed":True
+    "deployed":True,
+    "path":"/mnt/models/huggingface/qwen/qwen25_0.5b/"
 }
 
 mock_cluster_config = {
     "_id":"cluster_yyy",
-    "cluster_name":"muxi",
-    "controller_url":"http://127.0.0.1:7911"
+    "cluster_name":"dianxin4090",
+    "cluster_controller_url":"http://127.0.0.1:7911"
 }
 
 mock_image_config = {
@@ -81,7 +73,7 @@ def deploy(deploy_params: Deploy_Params):
     # 根据id拿到镜像配置
     image_config = mock_image_config
     # 给对应集群发送部署命令
-    response = 
+    response = requests.post(cluster_config['cluster_controller_url']+"/model/deploy", data=deploy_params.model_dump_json())
     # 发送其他信息
     return {"status_code": 200, "msg": ""}
 
