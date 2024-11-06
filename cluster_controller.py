@@ -2,10 +2,19 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import uvicorn
 import time
+import ray
+import subprocess
+import os
 
 from utils import WorkerInfo
 
 app = FastAPI()
+ray.init(ignore_reinit_error=True, address="auto")
+
+@ray.remote
+def remote_deploy(deploy_command: str):
+    result = subprocess.run(deploy_command, shell=True, capture_output=True, text=True)
+    return result
 
 class Controller:
     def __init__(self, dispatch_method: str = None):
@@ -128,17 +137,17 @@ class Controller:
     #     else:
     #         raise ValueError(f"Invalid dispatch method: {self.dispatch_method}")
 
-    # def receive_heart_beat(self, worker_name: str, queue_length: int):
-    #     if worker_name not in self.worker_info:
-    #         logger.info(f"Receive unknown heart beat. {worker_name}")
-    #         return False
+    def receive_heart_beat(self, worker_name: str, queue_length: int):
+        if worker_name not in self.worker_info:
+            print(f"Receive unknown heart beat. {worker_name}")
+            return False
 
-    #     self.worker_info[worker_name].queue_length = queue_length
-    #     self.worker_info[worker_name].last_heart_beat = time.time()
+        self.worker_info[worker_name].queue_length = queue_length
+        self.worker_info[worker_name].last_heart_beat = time.time()
         
-    #     rds.set(worker_info_key, serialize(self.worker_info))
-    #     logger.info(f"Receive heart beat. {worker_name}")
-    #     return True
+        # rds.set(worker_info_key, serialize(self.worker_info))
+        print(f"Receive heart beat. {worker_name}")
+        return True
 
     # def remove_stale_workers_by_expiration(self):
     #     expire = time.time() - CONTROLLER_HEART_BEAT_EXPIRATION
@@ -254,13 +263,23 @@ class Deploy_Params(BaseModel):
     backend: str = "vllm"
 
 @app.post("/model/deploy")
-def deploy(deploy_params: Deploy_Params):
+async def deploy(deploy_params: Deploy_Params):
     model_config_id = deploy_params.model_config_id
     cluster_id = deploy_params.cluster_id
     image_id = deploy_params.image_id
 
-    # 部署模型
+    # 部署模型，发送ray的命令
+    # 以下代码需要改为动态的变量填入
+    deploy_command = "CUDA_VISIBLE_DEVICES=2 /ws/conda3/usr/tangbo/envs/polycluster/bin/python \
+/home/tangbo/wgao/PolyClusterAI/workers/vllm_worker.py \
+--host 172.27.46.13 --port 7988 --model-path /mnt/models/huggingface/qwen/qwen25_0.5b/ \
+--controller-address http://172.27.46.13:18901 --worker-address http://172.27.46.13:7988 \
+--model-names qwen25_0.5b --log-dir /home/tangbo/wgao/ --gpus 0 --docker-name docker_name_xxx"
     
+    # 根据ip确定节点
+    target_ip = "172.27.46.13"
+    node_key = f"node:{target_ip}"
+    remote_deploy.options(resources={node_key: 1}).remote(deploy_command)
     return {"status_code": 200, "msg": ""}
 
 @app.post("/register_worker")
@@ -270,8 +289,14 @@ async def register_worker(request: Request):
         data["worker_name"], data["check_heart_beat"], data.get("worker_status", None)
     )
 
+@app.post("/receive_heart_beat")
+async def receive_heart_beat(request: Request):
+    data = await request.json()
+    exist = controller.receive_heart_beat(data["worker_name"], data["queue_length"])
+    return {"exist": exist}
+
 controller = Controller()
 
 # 通过代码启动 FastAPI 服务器
 if __name__ == "__main__":
-    uvicorn.run("cluster_controller:app", host="0.0.0.0", port=7911, reload=True)
+    uvicorn.run("cluster_controller:app", host="0.0.0.0", port=18901, workers=2)
